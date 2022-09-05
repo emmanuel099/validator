@@ -14,13 +14,17 @@ pub struct FieldQuoter {
     ident: syn::Ident,
     /// The field name
     name: String,
-    /// The field type
+    /// The field type (derefed)
     _type: String,
+    /// Wheter the field contains a reference
+    is_ref: bool,
 }
 
 impl FieldQuoter {
     pub fn new(ident: syn::Ident, name: String, _type: String) -> FieldQuoter {
-        FieldQuoter { ident, name, _type }
+        let (is_ref, _type) =
+            if _type.starts_with("&") { (true, _type[1..].to_string()) } else { (false, _type) };
+        FieldQuoter { ident, name, _type, is_ref }
     }
 
     /// Don't put a & in front a pointer since we are going to pass
@@ -34,7 +38,9 @@ impl FieldQuoter {
             quote!(#ident)
         } else if COW_TYPE.is_match(self._type.as_ref()) {
             quote!(self.#ident.as_ref())
-        } else if self._type.starts_with('&') || NUMBER_TYPES.contains(&self._type.as_ref()) {
+        } else if NUMBER_TYPES.contains(&self._type.as_ref()) {
+            quote!(self.#ident)
+        } else if self.is_ref {
             quote!(self.#ident)
         } else {
             quote!(&self.#ident)
@@ -71,17 +77,33 @@ impl FieldQuoter {
         let field_ident = &self.ident;
         let optional_pattern_matched = self.get_optional_validator_param();
         if self._type.starts_with("Option<Option<") {
-            return quote!(
-                if let Some(Some(#optional_pattern_matched)) = self.#field_ident {
-                    #tokens
-                }
-            );
+            if self.is_ref {
+                return quote!(
+                    if let &Some(Some(#optional_pattern_matched)) = self.#field_ident {
+                        #tokens
+                    }
+                );
+            } else {
+                return quote!(
+                    if let Some(Some(#optional_pattern_matched)) = self.#field_ident {
+                        #tokens
+                    }
+                );
+            }
         } else if self._type.starts_with("Option<") {
-            return quote!(
-                if let Some(#optional_pattern_matched) = self.#field_ident {
-                    #tokens
-                }
-            );
+            if self.is_ref {
+                return quote!(
+                    if let &Some(#optional_pattern_matched) = self.#field_ident {
+                        #tokens
+                    }
+                );
+            } else {
+                return quote!(
+                    if let Some(#optional_pattern_matched) = self.#field_ident {
+                        #tokens
+                    }
+                );
+            }
         }
 
         tokens
@@ -123,8 +145,6 @@ impl FieldQuoter {
 fn is_map(_type: &str) -> bool {
     if let Some(stripped) = _type.strip_prefix("Option<") {
         is_map(stripped)
-    } else if let Some(stripped) = _type.strip_prefix("&") {
-        is_map(stripped)
     } else {
         _type.starts_with("HashMap<")
             || _type.starts_with("FxHashMap<")
@@ -135,9 +155,7 @@ fn is_map(_type: &str) -> bool {
 }
 
 fn is_list(_type: &str) -> bool {
-    if let Some(stripped) = _type.strip_prefix("&") {
-        is_list(stripped)
-    } else if let Some(stripped) = _type.strip_prefix("Option<") {
+    if let Some(stripped) = _type.strip_prefix("Option<") {
         is_list(stripped)
     } else {
         _type.starts_with("Vec<")

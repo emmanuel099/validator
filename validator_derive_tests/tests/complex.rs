@@ -166,6 +166,8 @@ fn test_can_validate_option_fields_with_lifetime() {
         #[validate(length(min = 1, max = 10))]
         name: Option<&'a str>,
         #[validate(length(min = 1, max = 10))]
+        name_ref: &'a Option<&'a str>,
+        #[validate(length(min = 1, max = 10))]
         address: Option<Option<&'a str>>,
         #[validate(range(min = 1, max = 100))]
         age: Option<Option<usize>>,
@@ -189,6 +191,7 @@ fn test_can_validate_option_fields_with_lifetime() {
 
     let s = PutStruct {
         name: Some("al"),
+        name_ref: &Some("al"),
         address: Some(Some("gol")),
         age: Some(Some(20)),
         range: Some(2),
